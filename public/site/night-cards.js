@@ -51,6 +51,16 @@
       '<div class="pm-acts"><button data-pm-share>' + T('مشاركة', 'Partager') + '</button><button data-pm-png>' + T('حفظ QR', 'Enregistrer QR') + '</button>' + (used ? '' : '<button data-pm-ben>' + T('تعديل المستفيد', 'Bénéficiaire') + '</button>') + '</div></div>';
   }
 
+
+  async function myNightAllocation() {
+    try {
+      var d = dbc(), sess = await d.auth.getSession(), uid = sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id; if (!uid) return 0;
+      var acc = await d.from('graduate_accounts').select('student_id').eq('user_id', uid).eq('promotion_id', promoId()).limit(1);
+      var sid = acc.data && acc.data[0] && acc.data[0].student_id; if (!sid) return 0;
+      var r = await d.rpc('get_student_cards', { _student_id: sid }); if (r.error) return 0;
+      return (r.data || []).filter(function (x) { return x.ceremony_type === 'night'; }).reduce(function (a, x) { return a + Number(x.quantity || 0); }, 0);
+    } catch (e) { return 0; }
+  }
   async function staffOverview() {
     try { var d = dbc(); var r = await d.rpc('get_night_event_overview', { _promotion_id: promoId() }); return r.error ? null : (r.data || []); } catch (e) { return null; }
   }
@@ -72,13 +82,20 @@
         var sess = await dbc().auth.getSession(); if (!sess.data || !sess.data.session) { body.innerHTML = '<div class="pm-empty">' + T('سجّل الدخول إلى مساحة الخريج لعرض بطاقاتك.', 'Connectez-vous à l’espace diplômé.') + '<br><br><button class="pm-btn" id="pmLogin">' + T('فتح مساحة الخريج', 'Ouvrir l’espace') + '</button></div>'; var lb = body.querySelector('#pmLogin'); if (lb) lb.onclick = function () { close(); var g = document.getElementById('graduateEntryButton'); if (g) g.click(); }; return; }
         var rows = await loadOwn(force), ov = await staffOverview(), html = '';
         if (ov && ov.length) {
-          html += '<h3>' + T('إدارة الحفل', 'Gestion') + '</h3>' + ov.map(function (o) { return '<div class="pm-ev"><h3>' + esc(cname(o)) + '</h3><div class="pm-meta"><div>📍 ' + esc(isFr() ? (o.venue_fr || o.venue_ar || '') : (o.venue_ar || o.venue_fr || '')) + '</div><div>📅 ' + esc(fmtDate(o.event_date)) + '</div></div><div class="pm-stats"><span>' + T('الإجمالي', 'Total') + ': ' + o.total_cards + '</span><span>' + T('مستعملة', 'Utilisées') + ': ' + o.used_cards + '</span><span>' + T('متبقية', 'Restantes') + ': ' + o.remaining_cards + '</span></div></div>'; }).join('');
+          html += '<h3>' + T('إدارة الحفل', 'Gestion') + '</h3>' + ov.map(function (o) { return '<div class="pm-ev"><h3>' + esc(cname(o)) + '</h3><div class="pm-meta"><div>📍 ' + esc(isFr() ? (o.venue_fr || o.venue_ar || '') : (o.venue_ar || o.venue_fr || '')) + '</div><div>📅 ' + esc(fmtDate(o.event_date)) + '</div></div><div class="pm-stats"><span>' + T('الإجمالي', 'Total') + ': ' + o.total_cards + '</span><span>' + T('مستعملة', 'Utilisées') + ': ' + o.used_cards + '</span><span>' + T('متبقية', 'Restantes') + ': ' + o.remaining_cards + '</span></div>' + ((!o.event_date || !(o.venue_ar || o.venue_fr)) ? '<div style="margin-top:8px;padding:8px;border-radius:10px;background:rgba(245,158,11,.18);font-size:13px">⚠ ' + T('معلومات هذا الحفل ناقصة (المكان أو التاريخ): لن تظهر بطاقات QR للخريجين حتى تُدخلها.', 'Informations de cette soirée incomplètes (lieu ou date) : les cartes QR n’apparaîtront pas aux diplômés tant qu’elles ne sont pas saisies.') + ' <button class="pm-btn" data-pm-admin>' + T('إدخال معلومات الحفل', 'Saisir les informations') + '</button></div>' : '') + '</div>'; }).join('');
         }
         var groups = {}, order = []; rows.forEach(function (c) { var k = c.ceremony_id || c.ceremony_name; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(c); });
         html += '<h3>' + T('بطاقاتي', 'Mes cartes') + '</h3>';
-        if (!order.length) html += '<div class="pm-empty">' + T('لا توجد بطاقات حفل ليلي مخصّصة لك حالياً.', 'Aucune carte pour le moment.') + '</div>';
+        if (!order.length) {
+          var allocated = await myNightAllocation();
+          html += allocated > 0
+            ? '<div class="pm-empty"><b>' + T('خُصِّصت لك ' + allocated + ' بطاقة للحفل الليلي ✔', allocated + ' carte(s) de la soirée vous ont été attribuée(s) ✔') + '</b><br><br>' + T('لم تُدخل الإدارة مكان الحفل وتاريخه بعد، لذلك لا يمكن إصدار رموز QR الآن. ستظهر بطاقاتك هنا تلقائياً فور إدخالهما.', 'L’administration n’a pas encore renseigné le lieu et la date de la soirée ; les codes QR ne peuvent donc pas être émis pour le moment. Vos cartes apparaîtront ici automatiquement dès que ces informations seront saisies.') + '<br><br><button class="pm-btn" id="pmRefreshCards">' + T('تحديث', 'Actualiser') + '</button></div>'
+            : '<div class="pm-empty">' + T('لا توجد بطاقات حفل ليلي مخصّصة لك حالياً.', 'Aucune carte de soirée ne vous est attribuée pour le moment.') + '</div>';
+        }
         order.forEach(function (k) { var g = groups[k], f = g[0]; html += '<div class="pm-ev"><h3>🌙 ' + esc(cname(f)) + '</h3><div class="pm-meta">' + infoRows(Object.assign({}, f, { beneficiary_name: undefined })) + '</div><div class="pm-stats"><span>' + T('عدد البطاقات', 'Cartes') + ': ' + g.length + '</span></div>' + g.map(cardHTML).join('') + '</div>'; });
         body.innerHTML = html;
+        var rb = body.querySelector('#pmRefreshCards'); if (rb) rb.onclick = function () { render(true); };
+        body.querySelectorAll('[data-pm-admin]').forEach(function (x) { x.onclick = function () { close(); var a = document.getElementById('graduateAdminButton'); if (a) a.click(); }; });
       } catch (e) { body.innerHTML = '<div class="pm-empty">' + T('تعذر تحميل البطاقات.', 'Chargement impossible.') + '</div>'; }
     }
     render(true);
