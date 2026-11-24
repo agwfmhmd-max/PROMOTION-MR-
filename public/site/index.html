@@ -6211,11 +6211,13 @@ async function loadPromosData() {
   return data;
 }
 async function loadPromosDataFresh() {
-  const [pr, ov, hd, ir] = await Promise.all([
+  const [pr, ov, hd, ir, cat, frm] = await Promise.all([
     rawFrom("promotions").select("*").order("number"),
     db.rpc("platform_promotions_overview"),
     rawFrom("admins").select("*").eq("role", "super_admin").eq("is_platform", false).order("created_at"),
-    rawFrom("institutions").select("id,slug,name_ar,name_fr,short_name,logo_url").order("slug")
+    rawFrom("institutions").select("id,slug,name_ar,name_fr,short_name,logo_url").order("slug"),
+    rawFrom("mr_institution_catalog").select("code,sort,scope,name_ar,name_fr,short_name,website,logo_url").order("sort"),
+    rawFrom("mr_formation_catalog").select("code,institution_code,sort,duration_years,name_ar,name_fr").order("institution_code").order("sort")
   ]);
   if (pr.error) throw pr.error;
   const stats = {}; (ov.data || []).forEach(x => { stats[x.promotion_id] = x; });
@@ -6223,7 +6225,7 @@ async function loadPromosDataFresh() {
   const institutions = ir.data || [];
   const byId = new Map(institutions.map(x => [x.id, x]));
   const list = (pr.data || []).map(p => ({ ...p, institution: byId.get(p.institution_id) || null }));
-  return { list, stats, heads: hd.data || [], institutions, institutions_ready: institutionsReady, institutions_error: ir.error || null };
+  return { list, stats, heads: hd.data || [], institutions, institutions_ready: institutionsReady, institutions_error: ir.error || null, catalog: cat.error ? [] : (cat.data || []), formations: frm.error ? [] : (frm.data || []) };
 }
 function promoDomBadge(p) {
   if (p.is_default || p.domain_status === "active") return `<span class="tag tag-B">${t("promos_dom_active")}</span>`;
@@ -6362,9 +6364,21 @@ function promoCreateModal(data) {
   const list = d.list || [], institutions = d.institutions || [], institutionReady = !!d.institutions_ready;
   const fallbackNext = Math.max(17, ...list.map(x => Number(x.number) || 0)) + 1;
   const institutionOptions = institutions.map(i => `<option value="${esc(i.id)}">${esc(i.name_ar || i.name_fr || i.short_name)} · ${esc(i.slug)}</option>`).join("");
+  /* قائمة المؤسسات والجامعات والتكوينات الرسمية (منصة طلبة التعليم العالي MESRS) */
+  const catalog = d.catalog || [], catFormations = d.formations || [];
+  const LL = (ar, fr) => state.lang === "fr" ? fr : ar;
+  const catName = x => state.lang === "fr" ? (x.name_fr || x.name_ar) : (x.name_ar || x.name_fr);
+  const catGroup = (scope, label) => { const items = catalog.filter(x => x.scope === scope); return items.length ? `<optgroup label="${esc(label)}">${items.map(x => `<option value="${esc(x.code)}">${esc(x.short_name)} — ${esc(catName(x))}</option>`).join("")}</optgroup>` : ""; };
+  const catalogPickerHTML = (institutionReady && catalog.length) ? `<div class="st-card" id="pcCatalogBox" style="margin:10px 0">
+      <div class="field"><label>${LL("اختر المؤسسة من القائمة الرسمية (موريتانيا)", "Choisissez l’établissement dans la liste officielle (Mauritanie)")}</label>
+        <select id="pcCatInst"><option value="">${LL("— اختر المؤسسة أو الجامعة —", "— Choisir l’établissement ou l’université —")}</option>${catGroup("mr", LL("مؤسسات وجامعات موريتانيا", "Établissements et universités de Mauritanie"))}${catGroup("intl", LL("منظمات دولية", "Organisations internationales"))}${catGroup("abroad", LL("جامعات خارج موريتانيا", "Universités hors de Mauritanie"))}</select></div>
+      <label class="row" style="gap:10px;align-items:center;cursor:pointer;font-weight:700"><input type="checkbox" id="pcCatSeparate" disabled style="width:18px;height:18px;accent-color:var(--violet-600)" /><span>${LL("تتخرج تخصصات هذه المؤسسة بشكل منفصل (دفعة خاصة بتخصص)", "Les spécialités de cet établissement sont diplômées séparément (promotion par spécialité)")}</span></label>
+      <div class="field" id="pcCatFormWrap" hidden><label>${LL("التخصص (التكوين)", "Spécialité (formation)")}</label><select id="pcCatForm"></select></div>
+      <small class="muted" id="pcCatInfo">${LL("بعد الاختيار تُملأ الأسماء بالعربية والفرنسية والرمز تلقائياً ويمكنك تعديلها، واختيار رقم الدفعة، واستبدال الشعار.", "Après le choix, les noms arabe/français et le code sont remplis automatiquement ; vous pouvez les modifier, choisir le numéro de promotion et remplacer le logo.")}</small>
+    </div>` : "";
   const m = openModal(`<div class="modal"><div class="modal-head"><h3>${t("promos_modal_title")}</h3></div>
     <form class="modal-body" id="pcForm">
-      ${institutionReady ? `<div class="field"><label>${t("promos_institution_select")}</label><select name="institution_id" id="pcInstitution"><option value="__new__" selected>${t("promos_institution_new")}</option>${institutionOptions}</select></div>
+      ${institutionReady ? `${catalogPickerHTML}<div class="field"><label>${t("promos_institution_select")}</label><select name="institution_id" id="pcInstitution"><option value="__new__" selected>${t("promos_institution_new")}</option>${institutionOptions}</select></div>
         <div id="pcNewInstitution" class="st-card" style="margin:10px 0">
           <div class="grid-2"><div class="field"><label>${t("promos_institution_name_fr")}</label><input name="institution_name_fr" id="pcNameFr" dir="ltr" maxlength="120" /></div>
           <div class="field"><label>${t("promos_institution_name_ar")}</label><input name="institution_name_ar" id="pcNameAr" dir="rtl" maxlength="120" /></div></div>
@@ -6428,6 +6442,41 @@ function promoCreateModal(data) {
     const deviceName = m.querySelector("#pcDeviceName"); if (deviceName) deviceName.textContent = batchName;
     const deviceInstitution = m.querySelector("#pcDeviceInstitution"); if (deviceInstitution) deviceInstitution.textContent = institutionName;
   };
+  let catPick = null;
+  const catInstSel = m.querySelector("#pcCatInst"), catSepBox = m.querySelector("#pcCatSeparate"), catFormWrap = m.querySelector("#pcCatFormWrap"), catFormSel = m.querySelector("#pcCatForm"), catInfo = m.querySelector("#pcCatInfo");
+  const applyCatalogPick = () => {
+    if (!catInstSel) return;
+    const inst = catalog.find(x => x.code === catInstSel.value);
+    if (!inst) { catPick = null; if (catSepBox) { catSepBox.checked = false; catSepBox.disabled = true; } if (catFormWrap) catFormWrap.hidden = true; return; }
+    const forms = catFormations.filter(x => x.institution_code === inst.code);
+    catSepBox.disabled = !forms.length; if (!forms.length) catSepBox.checked = false;
+    const separate = catSepBox.checked && forms.length > 0;
+    catFormWrap.hidden = !separate;
+    if (separate && catFormSel.dataset.inst !== inst.code) {
+      catFormSel.innerHTML = forms.map(x => `<option value="${esc(x.code)}">${esc(catName(x))}${x.duration_years ? ` (${x.duration_years} ${LL("سنوات", "ans")})` : ""}</option>`).join("");
+      catFormSel.dataset.inst = inst.code;
+    }
+    const form = separate ? forms.find(x => x.code === catFormSel.value) : null;
+    catPick = { inst, form };
+    const slug = String((form || inst).code).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    const existing = institutions.find(i => i.slug === slug);
+    const setVal = (sel, val) => { const el = m.querySelector(sel); if (el) el.value = val; };
+    if (institutionSelect) {
+      if (existing) institutionSelect.value = existing.id;
+      else {
+        institutionSelect.value = "__new__";
+        setVal("#pcNameAr", (form ? `${inst.name_ar}-تخصص ${form.name_ar}` : inst.name_ar).slice(0, 120));
+        setVal("#pcNameFr", (form ? `${inst.name_fr} - Spécialité ${form.name_fr}` : inst.name_fr).slice(0, 120));
+        setVal("#pcShort", (form ? form.code : inst.short_name).slice(0, 32));
+        setVal("#pcSlug", slug);
+        setVal("#pcNumber", 1);
+      }
+      institutionSelect.onchange();
+    }
+    if (catInfo) catInfo.innerHTML = `${esc(catName(inst))}${form ? ` ← ${esc(catName(form))}` : ""}${inst.website ? ` · <a href="${esc(inst.website)}" target="_blank" rel="noopener noreferrer" dir="ltr">${esc(inst.website)}</a>` : ""}<br>${existing ? LL("هذه المؤسسة موجودة في المنصة: سيُضاف رقم الدفعة التالي إليها.", "Cet établissement existe déjà sur la plateforme : le numéro suivant est proposé.") : LL("ستُنشأ هذه المؤسسة عند الحفظ. يمكنك رفع شعارها الرسمي في الحقل أدناه، وإلا يُستخدم شعار تلقائي يمكن استبداله لاحقاً.", "Cet établissement sera créé à l’enregistrement. Vous pouvez téléverser son logo officiel ci-dessous, sinon un logo automatique est utilisé et peut être remplacé plus tard.")}`;
+    prev();
+  };
+  if (catInstSel) { catInstSel.onchange = applyCatalogPick; catSepBox.onchange = applyCatalogPick; catFormSel.onchange = applyCatalogPick; }
   if (institutionSelect) institutionSelect.onchange = () => {
     const fresh = institutionSelect.value === "__new__", box = m.querySelector("#pcNewInstitution");
     box.style.display = fresh ? "" : "none";
@@ -6499,6 +6548,10 @@ function promoCreateModal(data) {
         throw new Error(/PROMO_EXISTS/.test(em) ? t("promos_err_exists") : /INSTITUTION_NAME_REQUIRED/.test(em) ? t("promos_err_institution_name") : /INVALID_INSTITUTION_SLUG/.test(em) ? t("promos_err_institution_slug") : /INVALID_REGISTRATION_MASK/.test(em) ? t("promos_reg_mask_invalid") : isMissingRelation(error) ? t("promos_err_missing") : em);
       }
       const promo = Array.isArray(data) ? data[0] : data;
+      if (promo?.id && catPick && catPick.form) {
+        const ss = await db.rpc("platform_set_single_specialty", { _promotion_id: promo.id, _enabled: true, _name_ar: String(catPick.form.name_ar).slice(0, 120), _name_fr: String(catPick.form.name_fr).slice(0, 120) });
+        if (ss.error) toast(LL("أُنشئت الدفعة لكن تعذر ضبط التخصص الواحد: ", "Promotion créée mais la spécialité unique n’a pas pu être définie : ") + (ss.error.message || ""), "err");
+      }
       let paymentDelegationError = "";
       if (promo?.id && delegatePaymentForNewPromo) {
         const delegation = await db.rpc("update_payment_schedule", { _promotion_id: promo.id, _starts_at: null, _delegate_to_batch: true });
