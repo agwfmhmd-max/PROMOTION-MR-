@@ -1814,6 +1814,8 @@ const I18N = {
   th_cards_count:{ar:"عدد البطاقات",fr:"Nombre de cartes"},
   err_cards_mismatch:{ar:"مجموع بطاقات الألوان ({sum}) لا يساوي إجمالي بطاقات الحفل ({total}). صحّح الأرقام قبل الحفظ.",fr:"La somme des cartes par couleur ({sum}) ne correspond pas au total de la cérémonie ({total}). Corrigez les nombres avant d'enregistrer."},
   err_cards_need_one_color:{ar:"أضف لوناً واحداً على الأقل مع اسمه وعدد بطاقاته.",fr:"Ajoutez au moins une couleur avec son nom et son nombre de cartes."},
+  cards_intro_no_night:{ar:"يتم توزيع بطاقات حفل التخرج الملوّنة على الخريجين الذين تم قبول اشتراكهم ودفعهم فقط.",fr:"Les cartes colorées de la graduation sont réparties uniquement entre les diplômés dont l'abonnement est approuvé et payé."},
+  cards_wizard_intro_no_night:{ar:"اختر نوع الحفل. حفل التخرج يدعم ألوان البطاقات ويجب أن يساوي مجموعها الإجمالي.",fr:"Choisissez le type de cérémonie. La graduation accepte les couleurs et leur somme doit égaler le total."},
   cards_wizard_intro:{ar:"اختر نوع الحفل. حفل التخرج يدعم ألوان البطاقات ويجب أن يساوي مجموعها الإجمالي، أما الحفل الليلي فيستخدم إجمالي بطاقات Scan فقط بدون ألوان.",fr:"Choisissez le type de cérémonie. La graduation accepte les couleurs et leur somme doit égaler le total ; la soirée utilise uniquement un total de cartes Scan, sans couleurs."},
   cards_running_sum:{ar:"مجموع الألوان الحالي",fr:"Somme actuelle des couleurs"},
   btn_add_color_row:{ar:"+ إضافة لون آخر",fr:"+ Ajouter une autre couleur"},
@@ -3358,9 +3360,16 @@ function renderStudents(panel) {
     return a.specialty_id === b.specialty_id ? a.order_index - b.order_index : (specName(a.specialty_id) > specName(b.specialty_id) ? 1 : -1);
   });
 
+  /* أداء: لا نرسم كل الصفوف دفعة واحدة (468+ صفاً ≈ 10 آلاف عنصر تُجمّد الهواتف)؛ تُعرض دفعات من 50 */
+  const STUDENTS_PAGE = 50;
+  if (!state.studentsLimit || state.studentsLimit < STUDENTS_PAGE) state.studentsLimit = STUDENTS_PAGE;
+  const totalStudents = list.length;
+  const shownList = list.length > state.studentsLimit ? list.slice(0, state.studentsLimit) : list;
+  const pmDateFmt = (window.__pmDateFmt ||= new Intl.DateTimeFormat("fr-FR"));
+  const pmDate = { format: (dt) => (isNaN(dt) ? "—" : pmDateFmt.format(dt)) };
   panel.innerHTML = `
     <div class="panel-head">
-      <h2>${t("students_title_count", { n: list.length })}</h2>
+      <h2>${t("students_title_count", { n: totalStudents })}</h2>
       <div class="row" style="gap:8px;flex-wrap:wrap">${isPlatform() ? `<button class="btn btn-primary btn-sm" id="addStudent">${t("btn_add_student")}</button><button class="btn btn-ghost btn-sm" id="allowGraduatePasswordReset">تمكين استعادة كلمة المرور</button>` : ""}${isPlatform() ? '<button class="btn btn-ghost btn-sm" id="importGraduateRoster">رفع قائمة الخريجين</button><input id="graduateRosterFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.pdf" hidden>' : ''}</div>
     </div>
     ${showPaymentStatus ? `<section aria-label="حالات الاشتراك" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0"><div class="stat-card"><strong>${paymentCounts.paid}</strong><span>${state.lang==='fr'?'Payé':'دفعوا الاشتراك'}</span></div><div class="stat-card"><strong>${paymentCounts.pending}</strong><span>${state.lang==='fr'?'En attente':'في انتظار التحقق'}</span></div><div class="stat-card"><strong>${paymentCounts.unpaid}</strong><span>${state.lang==='fr'?'Non payé':'لم يدفعوا'}</span></div></section>` : ''}
@@ -3376,7 +3385,7 @@ function renderStudents(panel) {
         <th>#</th><th>${t("th_photo")}</th><th>${t("th_full_name")}</th><th>${t("th_reg_number")}</th><th>${t("th_phone")}</th>
         <th>${t("th_sash")}</th><th>${t("th_certificate")}</th>${showPaymentStatus ? `<th>${state.lang==='fr'?'Adhésion':'حالة الاشتراك'}</th>` : ""}<th>${t("th_specialty")}</th><th>${t("th_category")}</th><th>${t("th_date_added")}</th><th>${t("th_actions")}</th>
       </tr></thead>
-      <tbody>${list.length ? list.map(s => `
+      <tbody>${list.length ? shownList.map(s => `
         <tr>
           <td><b>${paymentOrderOf(s) ?? "—"}</b></td>
           <td>${photoUrl(s) ? `<img class="student-thumb" src="${esc(photoUrl(s))}" alt="${esc(s.full_name)}" loading="lazy" />` : `<span class="muted">—</span>`}</td>
@@ -3388,7 +3397,7 @@ function renderStudents(panel) {
           ${showPaymentStatus ? `<td><span style="display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:800;${paymentColor(paymentByStudent[s.id])}">${esc(paymentLabel(paymentByStudent[s.id]))}</span></td>` : ""}
           <td>${esc(specName(s.specialty_id))}</td>
           <td>${categoryOf(paymentOrderOf(s)) ? `<span class="tag tag-${categoryOf(paymentOrderOf(s))}">${categoryOf(paymentOrderOf(s))}</span>` : '<span class="muted">—</span>'}</td>
-          <td>${new Date(s.created_at).toLocaleDateString("fr-FR")}</td>
+          <td>${pmDate.format(new Date(s.created_at))}</td>
           <td>
             <div class="row" style="gap:6px">
               ${isSuper() ? `
@@ -3400,7 +3409,10 @@ function renderStudents(panel) {
           </td>
         </tr>`).join("") : `<tr><td colspan="${showPaymentStatus?12:11}" class="empty">${t("no_students")}</td></tr>`}
       </tbody>
-    </table></div>`;
+    </table></div>
+    ${totalStudents > shownList.length ? `<div class="row" style="justify-content:center;gap:10px;margin:14px 0;flex-wrap:wrap"><span class="muted" style="align-self:center">${shownList.length} / ${totalStudents}</span><button class="btn btn-ghost" id="moreStudents">${state.lang === "fr" ? "Afficher plus" : "عرض المزيد"}</button><button class="btn btn-ghost" id="allStudents">${state.lang === "fr" ? "Tout afficher" : "عرض الكل"}</button></div>` : ""}`;
+  if ($("#moreStudents")) $("#moreStudents").onclick = () => { state.studentsLimit += STUDENTS_PAGE; renderStudents(panel); };
+  if ($("#allStudents")) $("#allStudents").onclick = () => { state.studentsLimit = totalStudents; renderStudents(panel); };
 
   if (isPlatform() && $("#addStudent")) $("#addStudent").onclick = () => studentModal(null, specs);
   if (isPlatform() && $("#allowGraduatePasswordReset")) $("#allowGraduatePasswordReset").onclick = () => {
@@ -3425,8 +3437,12 @@ function renderStudents(panel) {
       } catch (error) { toast(error.message || "تعذر قراءة الملف.", "err"); event.target.value = ""; }
     };
   }
-  $("#q").oninput = (e) => { state.query = e.target.value; const p = e.target.selectionStart; renderStudents(panel); const f = $("#q"); f.focus(); f.setSelectionRange(p, p); };
-  if ($("#fs")) $("#fs").onchange = e => { state.filterSpec = e.target.value; renderStudents(panel); };
+  $("#q").oninput = (e) => {
+    state.query = e.target.value; state.studentsLimit = 0;
+    const p = e.target.selectionStart; clearTimeout(state._studentsSearchTimer);
+    state._studentsSearchTimer = setTimeout(() => { if (!panel.isConnected) return; renderStudents(panel); const f = $("#q"); if (f) { f.focus(); try { f.setSelectionRange(p, p); } catch (_) {} } }, 220);
+  };
+  if ($("#fs")) $("#fs").onchange = e => { state.filterSpec = e.target.value; state.studentsLimit = 0; renderStudents(panel); };
   $$("[data-edit]").forEach(b => b.onclick = () => studentModal(state.students.find(s => s.id === b.dataset.edit), specs));
   $$("[data-del]").forEach(b => b.onclick = () => deleteStudent(b.dataset.del));
   $$("[data-up]").forEach(b => b.onclick = () => moveStudent(b.dataset.up, -1));
@@ -4935,7 +4951,7 @@ function renderCardsTab(panel) {
       <h2>${t("cards_title")}</h2>
       <button class="btn btn-primary btn-sm" id="addCer">${t("btn_add_ceremony")}</button>
     </div>
-    <p class="muted" style="font-size:13px;margin-bottom:16px">${t("cards_intro")}</p>
+    <p class="muted" style="font-size:13px;margin-bottom:16px">${t(nightEventEnabled() ? "cards_intro" : "cards_intro_no_night")}</p>
     ${Array.isArray(paymentRows) ? cers.map(cer => cerAdminCard(cer, N)).join("") : `<div class="empty">${state.lang === "fr" ? "Chargement des abonnements payés…" : "جارٍ تحميل قائمة المشتركين الذين دفعوا…"}</div>`}
   `;
 
@@ -5022,7 +5038,7 @@ function ceremonyCreateModal() {
     <div class="modal modal-lg">
       <div class="modal-head"><h3>${t("btn_add_ceremony")} — ${t("cards_title")}</h3></div>
       <form class="modal-body" id="cerCreateForm">
-        <p class="cards-wizard-intro">${t("cards_wizard_intro")}</p>
+        <p class="cards-wizard-intro">${t(nightEventEnabled() ? "cards_wizard_intro" : "cards_wizard_intro_no_night")}</p>
         <div class="grid-2">
           <div class="field"><label>${t("field_ceremony_name_ar")}</label><input name="name" required /></div>
           <div class="field"><label>${t("field_ceremony_name_fr")}</label><input name="name_fr" /></div>
@@ -5050,7 +5066,7 @@ function ceremonyCreateModal() {
             <b id="wzSumVal">0 / 0</b>
           </div>
         </div>
-        <p class="muted" id="wzNightNote" style="display:none;font-size:13px">${t("cards_no_colors_note")}</p>
+        <p class="muted" id="wzNightNote" style="display:none;font-size:13px">${nightEventEnabled() ? t("cards_no_colors_note") : ""}</p>
 
         <button class="btn btn-primary btn-block" type="submit">${t("btn_save")}</button>
       </form>
@@ -5190,7 +5206,7 @@ function ceremonyModal(cer) {
         <div class="field"><label>${t("ceremony_type")}</label>
           <select name="type" ${isEdit ? "disabled" : ""}>
             <option value="graduation" ${cer?.type === "graduation" ? "selected" : ""}>${t("ceremony_graduation")}</option>
-            <option value="night" ${cer?.type === "night" ? "selected" : ""}>${t("ceremony_night")}</option>
+            ${(nightEventEnabled() || cer?.type === "night") ? `<option value="night" ${cer?.type === "night" ? "selected" : ""}>${t("ceremony_night")}</option>` : ""}
           </select>
         </div>
         <div class="field"><label>${t("cards_total")}</label>
@@ -6389,7 +6405,7 @@ function promoCreateModal(data) {
       <div class="grid-2"><div class="field"><label>${t("promos_field_number")}</label><input name="n" id="pcNumber" type="number" min="1" max="999" required dir="ltr" value="${institutionReady ? 1 : fallbackNext}" /></div>
         <div class="field"><label>${t("promo_name_fr")}</label><input name="fr" dir="ltr" maxlength="80" /></div></div>
       <div class="field"><label>${t("promo_name_ar")}</label><input name="ar" dir="rtl" maxlength="80" /></div>
-      <div class="field"><label>${t("field_platform_name")}</label><input name="platform_name" maxlength="120" placeholder="${esc(t("field_platform_name"))}" /></div>
+      <div class="field"><label>${t("field_platform_name")}</label><input name="platform_name" maxlength="120" placeholder="${esc(t("field_platform_name"))}" /><small class="muted">${LL("اتركه فارغاً ليُسمّى تلقائياً: المؤسسة (والتخصص) + رقم الدفعة، مثل ISERI-HC 3ème Promotion", "Laissez vide pour un nom automatique : établissement (et spécialité) + numéro de promotion, ex. ISERI-HC 3ème Promotion")}</small></div>
       <div class="field"><label>${t("promo_logo_style_label")}</label>${logoStyleOptionsHTML("general", "pcLogoStyle")}<small class="muted">${t("promo_logo_style_note")}</small></div>
       ${institutionReady ? `<div class="field"><label>${t("promos_reg_mask")}</label><input name="registration_mask" id="pcRegMask" dir="ltr" maxlength="32" autocomplete="off" required /><small class="muted">${t("promos_reg_mask_hint")} ${t("promos_reg_mask_example")} <bdi id="pcRegExample" dir="ltr"></bdi></small></div>
         <label class="row" style="gap:10px;align-items:center;cursor:pointer;font-weight:700"><input name="night_event_enabled" type="checkbox" checked style="width:18px;height:18px;accent-color:var(--violet-600)" /><span>${t("promos_night_enabled")}</span></label><small class="muted">${t("promos_night_note")}</small>` : ""}
@@ -6442,6 +6458,15 @@ function promoCreateModal(data) {
     const deviceName = m.querySelector("#pcDeviceName"); if (deviceName) deviceName.textContent = batchName;
     const deviceInstitution = m.querySelector("#pcDeviceInstitution"); if (deviceInstitution) deviceInstitution.textContent = institutionName;
   };
+  const autoPlatformName = () => {
+    const chosenI = institutions.find(i => i.id === (institutionSelect ? institutionSelect.value : ""));
+    const short = String(chosenI ? chosenI.short_name : (m.querySelector("#pcShort")?.value || "")).trim().slice(0, 32) || "ISCAE";
+    const nn = Math.max(1, Number(m.querySelector("#pcNumber")?.value) || 1);
+    return `${short} ${nn === 1 ? "1ère" : nn + "ème"} Promotion`;
+  };
+  const platformNameInput = m.querySelector('[name="platform_name"]');
+  const refreshAutoName = () => { if (platformNameInput) platformNameInput.placeholder = autoPlatformName(); };
+  m.addEventListener("input", refreshAutoName); m.addEventListener("change", refreshAutoName); refreshAutoName();
   let catPick = null;
   const catInstSel = m.querySelector("#pcCatInst"), catSepBox = m.querySelector("#pcCatSeparate"), catFormWrap = m.querySelector("#pcCatFormWrap"), catFormSel = m.querySelector("#pcCatForm"), catInfo = m.querySelector("#pcCatInfo");
   const applyCatalogPick = () => {
@@ -6558,7 +6583,7 @@ function promoCreateModal(data) {
         if (delegation.error) paymentDelegationError = delegation.error.message || String(delegation.error);
       }
       const newPromoSlug = promo?.slug || `${instSlug}-promo-${n}`;
-      const platformName = String(v.platform_name || "").trim();
+      const platformName = String(v.platform_name || "").trim() || autoPlatformName();
       let platformNameError = "";
       if (platformName && promo?.id) {
         const settingsResult = await rawFrom("settings").upsert({ promotion_id: promo.id, platform_name: platformName, updated_at: new Date().toISOString() }, { onConflict: "promotion_id" });

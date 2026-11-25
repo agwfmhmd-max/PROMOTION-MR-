@@ -6,6 +6,7 @@
   var isFr = function () { try { var b = br(), l = b && b.lang; if (typeof l === 'function') l = l.call(b); return String(l || document.documentElement.lang || '').toLowerCase().indexOf('fr') === 0; } catch (e) { return String(document.documentElement.lang || '').toLowerCase().indexOf('fr') === 0; } };
   var T = function (ar, fr) { return isFr() ? fr : ar; };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var nightOn = function () { try { var b = br(), p = b && b.state && b.state.promo; return !(p && p.night_event_enabled === false); } catch (e) { return true; } };
   var dbc = function () { var b = br(); return b && b.db ? b.db : (typeof db !== 'undefined' ? db : null); };
   var promoId = function () { var b = br(); try { return (b && b.tenant && b.tenant.id) || (typeof TENANT !== 'undefined' && TENANT && TENANT.id) || null; } catch (e) { return null; } };
   var say = function (m, k) { try { if (typeof toast === 'function') toast(m, k || ''); else if (br() && br().toast) br().toast(m, k); } catch (e) {} };
@@ -127,11 +128,13 @@
   }
   var wtries = 0, wiv = setInterval(function () { wtries++; wrapRedeem(); if ((dbc() && dbc().__pmWrapped) || wtries > 120) clearInterval(wiv); }, 500);
   function decorateAdmin() {
+    if (!nightOn()) return;
     var input = document.getElementById('graduateNightToken'); if (!input || document.querySelector('[data-pm-counters="admin"]')) return;
     var anchor = input.closest('label') || input;
     var box = document.createElement('div'); box.setAttribute('data-pm-counters', 'admin'); anchor.parentNode.insertBefore(box, anchor); refreshCounters();
   }
   async function openPage() {
+    if (!nightOn()) return;
     css(); var b = br(); if (!b || !b.openModal) { say(T('الصفحة غير جاهزة بعد، أعد المحاولة', 'Page pas prête'), 'err'); return; }
     var root = b.openModal('<div class="modal graduate-modal" dir="' + (isFr() ? 'ltr' : 'rtl') + '"><div class="modal-head"><h3>' + T('بطاقات الحفل الليلي', 'Cartes de la soirée') + '</h3><button class="btn ghost" data-close>×</button></div><div class="modal-body" id="pmNightBody"><div class="pm-empty">…</div></div></div>');
     var host = root && root.nodeType === 1 ? root : document.querySelector('.modal-backdrop,.overlay');
@@ -194,13 +197,15 @@
   new MutationObserver(function () { if (pend) return; pend = true; requestAnimationFrame(function () { pend = false; decorate(); addButton(); labelButton(); decorateAdmin(); }); }).observe(document.documentElement, { childList: true, subtree: true });
 
   function addButton() {
+    if (!nightOn()) { var old = document.getElementById('pmNightPageBtn'); if (old) old.remove(); return; }
     var g = document.getElementById('graduateEntryButton'); if (!g || document.getElementById('pmNightPageBtn')) return;
     var b = document.createElement('button'); b.id = 'pmNightPageBtn'; b.type = 'button'; b.className = g.className; b.setAttribute('data-pm-notr', '1'); b.onclick = openPage; g.insertAdjacentElement('afterend', b); labelButton();
   }
-  function labelButton() { var b = document.getElementById('pmNightPageBtn'); if (!b) return; var t = '🌙 ' + T('بطاقات الحفل الليلي', 'Cartes de la soirée'); if (b.textContent !== t) b.textContent = t; }
+  function labelButton() { var b = document.getElementById('pmNightPageBtn'); if (!b) return; if (!nightOn()) { b.remove(); return; } var t = '🌙 ' + T('بطاقات الحفل الليلي', 'Cartes de la soirée'); if (b.textContent !== t) b.textContent = t; }
   new MutationObserver(labelButton).observe(document.documentElement, { attributes: true, attributeFilter: ['lang', 'dir'] });
+  setInterval(function () { if (!document.hidden) addButton(); }, 3000);
   window.PromoMRNightCards = { open: openPage };
-  try { if (new URL(location.href).searchParams.get('night-cards')) { var n = 0, iv = setInterval(function () { if ((br() && br().openModal) || ++n > 60) { clearInterval(iv); if (br() && br().openModal) openPage(); } }, 500); } } catch (e) {}
+  try { if (new URL(location.href).searchParams.get('night-cards')) { var n = 0, iv = setInterval(function () { if ((br() && br().openModal) || ++n > 60) { clearInterval(iv); if (br() && br().openModal && nightOn()) openPage(); } }, 500); } } catch (e) {}
 
   /* ===== ماسح الإدارة: قبول الرمز الخام أو رابط البطاقة ===== */
   document.addEventListener('click', function (e) {
@@ -375,6 +380,71 @@
     for (var key in EXTRA) add(key, EXTRA[key]);
     long.sort(function (x, y) { return y[0].length - x[0].length; }); LONG = long;
   }
+  var TR_CACHE = new Map();
+  function tr(text) {
+    if (!AR.test(text)) return text;
+    var cached = TR_CACHE.get(text); if (cached !== undefined) return cached;
+    var res = trUncached(text); if (TR_CACHE.size > 4000) TR_CACHE.clear(); TR_CACHE.set(text, res); return res;
+  }
+  function trUncached(text) {
+    if (!EXACT) build();
+    var t = String(text).trim(); if (!t) return text;
+    if (EXACT.has(t)) return String(text).replace(t, EXACT.get(t));
+    for (var li = 0; li < LABELS.length; li++) if (t.indexOf(LABELS[li][0]) === 0) return String(text).replace(LABELS[li][0], LABELS[li][1]);
+    var out = String(text), i;
+    for (i = 0; i < PATTERNS.length; i++) out = out.replace(PATTERNS[i][0], PATTERNS[i][1]);
+    for (i = 0; i < LONG.length; i++) if (out.indexOf(LONG[i][0]) >= 0) out = out.split(LONG[i][0]).join(LONG[i][1]);
+    for (i = 0; i < FORCE.length; i++) out = out.replace(FORCE[i][0], FORCE[i][1]);
+    return out;
+  }
+  function trCode(text) { if (!CODE_RE.test(text)) return text; var k = String(text).replace(/[\s.]/g, ''); if (!ERR_MAP[k] && k.toLowerCase() === 'forbidden') k = 'FORBIDDEN'; var e = ERR_MAP[k]; return e ? (isFrLang() ? e.fr : e.ar) : text; }
+  var isFrLang = function () { return String(document.documentElement.lang || '').toLowerCase().indexOf('fr') === 0; };
+  var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, INPUT: 1, NOSCRIPT: 1 };
+  function applyNode(node, codesOnly) {
+    var val = node.nodeValue; if (!val) return;
+    var isCode = CODE_RE.test(val);
+    if (!isCode && (codesOnly || !AR.test(val))) return;
+    var p = node.parentNode; if (!p || SKIP[p.nodeName]) return;
+    if (p.closest && p.closest('[data-pm-notr]')) return;
+    var v = isCode ? trCode(val) : tr(val);
+    if (v !== val) { orig.set(node, [val, v]); node.nodeValue = v; }
+  }
+  function walk(root, codesOnly) {
+    if (!root) return;
+    if (root.nodeType === 3) { applyNode(root, codesOnly); return; }
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, nodes = [];
+    while ((n = w.nextNode())) nodes.push(n);
+    for (var k = 0; k < nodes.length; k++) applyNode(nodes[k], codesOnly);
+    if (!codesOnly && root.querySelectorAll) root.querySelectorAll('[placeholder],[title],[aria-label]').forEach(function (el) { ['placeholder', 'title', 'aria-label'].forEach(function (a) { var cur = el.getAttribute(a); if (cur && AR.test(cur)) { var v = tr(cur); if (v !== cur) el.setAttribute(a, v); } }); });
+  }
+  function revert() { orig.forEach(function (pair, node) { if (node.isConnected && node.nodeValue === pair[1]) node.nodeValue = pair[0]; }); orig.clear(); }
+  /* أداء: ترجمة تزايدية — لا نمسح الصفحة كلها عند كل تغيير، بل العقد المضافة/المتغيّرة فقط */
+  var pending = new Set(), fullPass = true;
+  function pass() {
+    if (busy) return; busy = true;
+    try {
+      var fr = isFrLang();
+      if (fullPass) { fullPass = false; pending.clear(); if (fr) walk(document.body, false); else { if (orig.size) revert(); walk(document.body, true); } return; }
+      var roots = Array.from(pending); pending.clear();
+      for (var k = 0; k < roots.length; k++) { var n = roots[k]; if (n.isConnected) walk(n, !fr); }
+    } finally { busy = false; }
+  }
+  function schedule() { clearTimeout(timer); timer = setTimeout(pass, 60); }
+  function start() {
+    if (!document.body) return setTimeout(start, 50);
+    pass();
+    new MutationObserver(function (muts) {
+      if (busy) return;
+      for (var i = 0; i < muts.length; i++) {
+        var m = muts[i];
+        if (m.type === 'characterData') pending.add(m.target);
+        else for (var j = 0; j < m.addedNodes.length; j++) { var a = m.addedNodes[j]; if (a.nodeType === 1 || a.nodeType === 3) pending.add(a); }
+      }
+      if (pending.size) schedule();
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    new MutationObserver(function () { fullPass = true; schedule(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+  }
+
   function tr(text) {
     if (!AR.test(text)) return text;
     if (!EXACT) build();

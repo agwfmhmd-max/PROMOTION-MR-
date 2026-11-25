@@ -22,7 +22,8 @@
     "    const tokens = raw.match(/[A-Za-z][A-Za-z0-9_]{5,}/g) || [];\n" +
     "    for (const t of tokens) { const k = __pmErrMap[t] ? t : (t.toLowerCase() === 'forbidden' ? 'FORBIDDEN' : (t.indexOf('CROSS_PROMOTION_BLOCKED') === 0 ? 'CROSS_PROMOTION_BLOCKED' : '')); if (k && __pmErrMap[k]) return fr ? __pmErrMap[k].fr : __pmErrMap[k].ar; }\n" +
     "    return raw;\n" +
-    "  }\n";
+    "  }\n" +
+    "  function __pmNightOff() { try { const p = window.PromoMRFeatureBridge && window.PromoMRFeatureBridge.state && window.PromoMRFeatureBridge.state.promo; return !!(p && p.night_event_enabled === false); } catch (e) { return false; } }\n";
   var RX = {
     nodes: /for\s*\(\s*const\s+node\s+of\s+nodes\s*\)\s*for\s*\(\s*const\s*\[\s*ar\s*,\s*fr\s*\]\s+of\s+(pairs|FR)\s*\)\s*if\s*\(\s*node\.nodeValue\.includes\(\s*ar\s*\)\s*\)\s*node\.nodeValue\s*=\s*node\.nodeValue\.split\(\s*ar\s*\)\.join\(\s*fr\s*\)\s*;/g,
     attrs: /if\s*\(\s*el\.hasAttribute\(\s*attr\s*\)\s*\)\s*for\s*\(\s*const\s*\[\s*ar\s*,\s*fr\s*\]\s+of\s+(pairs|FR)\s*\)\s*el\.setAttribute\(\s*attr\s*,\s*el\.getAttribute\(\s*attr\s*\)\.split\(\s*ar\s*\)\.join\(\s*fr\s*\)\s*\)\s*;/g,
@@ -36,7 +37,9 @@
     ["const password=root.querySelector('#graduateNewPassword').value,confirm=root.querySelector('#graduateConfirmPassword').value;", "const password=root.querySelector('#graduateNewPassword').value;"],
     ["if(password!==confirm)return notify(bridge,'تأكيد كلمة المرور غير مطابق.','err');", ""],
     ["أدخل كلمة المرور الجديدة ثم أكدها؛", "أدخل كلمة المرور الجديدة؛"],
-    ["وبعد فتحه ستضع كلمة مرور جديدة وتؤكدها.", "وبعد فتحه ستضع كلمة مرور جديدة."]
+    ["وبعد فتحه ستضع كلمة مرور جديدة وتؤكدها.", "وبعد فتحه ستضع كلمة مرور جديدة."],
+    ["'إدارة الحفل الليلي والدفعة'", "(__pmNightOff() ? 'إدارة الدفعة' : 'إدارة الحفل الليلي والدفعة')"],
+    ["'Gérer la soirée et la promotion'", "(__pmNightOff() ? 'Gérer la promotion' : 'Gérer la soirée et la promotion')"]
   ];
   var AUTH_START = "  async function signInOrUp(bridge, root) {";
   var AUTH_END = "  function passwordResetRequestModal(bridge, registration='') {";
